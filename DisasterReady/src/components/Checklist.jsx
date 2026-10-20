@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const checklistItems = [
   {
@@ -31,6 +31,50 @@ const checklistItems = [
 
 function Checklist() {
   const [checkedItems, setCheckedItems] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Load saved checklist items when the component opens.
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSavedChecklist() {
+      try {
+        if (!window.electronAPI) {
+          setIsLoaded(true);
+          return;
+        }
+
+        const savedItems = await window.electronAPI.loadChecklist();
+
+        if (isMounted) {
+          setCheckedItems(Array.isArray(savedItems) ? savedItems : []);
+        }
+      } catch (error) {
+        console.error('Could not load checklist:', error);
+      } finally {
+        if (isMounted) {
+          setIsLoaded(true);
+        }
+      }
+    }
+
+    loadSavedChecklist();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Save changes after the initial load finishes.
+  useEffect(() => {
+    if (!isLoaded || !window.electronAPI) {
+      return;
+    }
+
+    window.electronAPI.saveChecklist(checkedItems).catch((error) => {
+      console.error('Could not save checklist:', error);
+    });
+  }, [checkedItems, isLoaded]);
 
   const totalItems = checklistItems.reduce(
     (total, category) => total + category.items.length,

@@ -1,10 +1,10 @@
-{"main": "electron/main.js",
+{"main": "Electron/main.js",
 "build": {
   "appId": "com.disasterready.desktop",
   "productName": "DisasterReady",
   "files": [
     "dist/**/*",
-    "electron/**/*",
+    "Electron/**/*",
     "package.json"
   ],
   "mac": {
