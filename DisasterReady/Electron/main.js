@@ -11,6 +11,34 @@ const isDev = !app.isPackaged;
 const checklistFilePath = () =>
   path.join(app.getPath('userData'), 'checklist.json');
 
+const quizResultsFilePath = () =>
+  path.join(app.getPath('userData'), 'quiz-results.json');
+
+const emptyQuizResults = () => ({
+  attempts: 0,
+  previousScore: null,
+  latestScore: 0,
+  bestScore: 0,
+  lastAttemptId: null,
+});
+
+function normaliseQuizResults(data, totalQuestions) {
+  const isScore = (value) =>
+    Number.isInteger(value) && value >= 0 && value <= totalQuestions;
+
+  return {
+    attempts:
+      Number.isInteger(data?.attempts) && data.attempts >= 0
+        ? data.attempts
+        : 0,
+    previousScore: isScore(data?.previousScore) ? data.previousScore : null,
+    latestScore: isScore(data?.latestScore) ? data.latestScore : 0,
+    bestScore: isScore(data?.bestScore) ? data.bestScore : 0,
+    lastAttemptId:
+      typeof data?.lastAttemptId === 'string' ? data.lastAttemptId : null,
+  };
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -102,35 +130,29 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('quiz:load-results', async () => {
   try {
-    const filePath = path.join(app.getPath('userData'), 'quiz-results.json');
-    const fileContents = await fs.readFile(filePath, 'utf8');
+    const fileContents = await fs.readFile(quizResultsFilePath(), 'utf8');
     const data = JSON.parse(fileContents);
 
     return {
       attempts: Number.isInteger(data.attempts) ? data.attempts : 0,
+      previousScore: Number.isInteger(data.previousScore)
+        ? data.previousScore
+        : null,
       latestScore: Number.isInteger(data.latestScore) ? data.latestScore : 0,
       bestScore: Number.isInteger(data.bestScore) ? data.bestScore : 0,
     };
   } catch (error) {
     if (error.code === 'ENOENT') {
-      return {
-        attempts: 0,
-        latestScore: 0,
-        bestScore: 0,
-      };
+      return emptyQuizResults();
     }
 
     console.error('Failed to load quiz results:', error);
 
-    return {
-      attempts: 0,
-      latestScore: 0,
-      bestScore: 0,
-    };
+    return emptyQuizResults();
   }
 });
 
-ipcMain.handle('quiz:save-results', async (_event, score, totalQuestions) => {
+ipcMain.handle('quiz:save-results', async (_event, score, totalQuestions, attemptId) => {
   if (
     !Number.isInteger(score) ||
     !Number.isInteger(totalQuestions) ||
@@ -141,36 +163,33 @@ ipcMain.handle('quiz:save-results', async (_event, score, totalQuestions) => {
     throw new Error('Invalid quiz results.');
   }
 
-  const filePath = path.join(app.getPath('userData'), 'quiz-results.json');
+  if (typeof attemptId !== 'string' || attemptId.length === 0 || attemptId.length > 200) {
+    throw new Error('Invalid quiz attempt.');
+  }
 
-  let previousResults = {
-    attempts: 0,
-    latestScore: 0,
-    bestScore: 0,
-  };
+  const filePath = quizResultsFilePath();
+  let previousResults = emptyQuizResults();
 
   try {
     const fileContents = await fs.readFile(filePath, 'utf8');
-    const data = JSON.parse(fileContents);
-
-    if (Number.isInteger(data.attempts) && data.attempts >= 0) {
-      previousResults.attempts = data.attempts;
-    }
-
-    if (Number.isInteger(data.bestScore)) {
-      previousResults.bestScore = data.bestScore;
-    }
+    previousResults = normaliseQuizResults(JSON.parse(fileContents), totalQuestions);
   } catch (error) {
     if (error.code !== 'ENOENT') {
       console.error('Could not read previous quiz results:', error);
     }
   }
 
+  if (previousResults.lastAttemptId === attemptId) {
+    return { success: true, results: previousResults };
+  }
+
   const results = {
     attempts: previousResults.attempts + 1,
+    previousScore: previousResults.attempts > 0 ? previousResults.latestScore : null,
     latestScore: score,
     bestScore: Math.max(previousResults.bestScore, score),
     totalQuestions,
+    lastAttemptId: attemptId,
   };
 
   await fs.mkdir(path.dirname(filePath), { recursive: true });

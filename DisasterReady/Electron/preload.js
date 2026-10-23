@@ -10,6 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   loadQuizResults: () => ipcRenderer.invoke('quiz:load-results'),
 
-  saveQuizResults: (score, totalQuestions) =>
-    ipcRenderer.invoke('quiz:save-results', score, totalQuestions),
+  saveQuizResults: (score, totalQuestions, attemptId) =>
+    ipcRenderer.invoke('quiz:save-results', score, totalQuestions, attemptId),
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const questions = [
   {
@@ -99,340 +99,315 @@ const questions = [
   },
 ];
 
-const emptyResults = {
+const initialSavedResults = {
   attempts: 0,
+  previousScore: null,
   latestScore: 0,
   bestScore: 0,
 };
 
-function Quiz() {
+const quizResultsStorageKey = 'disasterready.quiz-results';
+
+const normaliseResults = (results) => ({
+  attempts: Number.isInteger(results?.attempts) ? results.attempts : 0,
+  previousScore: Number.isInteger(results?.previousScore)
+    ? results.previousScore
+    : null,
+  latestScore: Number.isInteger(results?.latestScore) ? results.latestScore : 0,
+  bestScore: Number.isInteger(results?.bestScore) ? results.bestScore : 0,
+});
+
+const loadBrowserResults = () => {
+  try {
+    return JSON.parse(window.localStorage.getItem(quizResultsStorageKey) || 'null');
+  } catch {
+    return null;
+  }
+};
+
+const createAttemptId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const Quiz = () => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [answers, setAnswers] = useState([]);
   const [score, setScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
-
-  const [savedResults, setSavedResults] = useState(emptyResults);
+  const [savedResults, setSavedResults] = useState(initialSavedResults);
   const [resultsLoaded, setResultsLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const attemptIdRef = useRef(null);
 
+  // Load results on mount
   useEffect(() => {
-    let isMounted = true;
-
+    let mounted = true;
     async function loadResults() {
       try {
-        if (!window.electronAPI) {
-          return;
+        let results;
+        if (window.electronAPI?.loadQuizResults) {
+          results = await window.electronAPI.loadQuizResults();
+        } else {
+          results = loadBrowserResults();
         }
 
-        const results = await window.electronAPI.loadQuizResults();
-
-        if (isMounted && results) {
-          setSavedResults({
-            attempts: results.attempts ?? 0,
-            latestScore: results.latestScore ?? 0,
-            bestScore: results.bestScore ?? 0,
-          });
+        if (mounted && results) {
+          setSavedResults(normaliseResults(results));
         }
-      } catch (error) {
-        console.error('Could not load quiz results:', error);
+      } catch (err) {
+        console.error('Could not load quiz results:', err);
+        if (mounted) {
+          setSavedResults(normaliseResults(loadBrowserResults()));
+          setSaveError(true);
+          setSaveErrorMessage(String(err?.message || err));
+        }
       } finally {
-        if (isMounted) {
+        if (mounted) {
           setResultsLoaded(true);
         }
       }
     }
-
     loadResults();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  const question = questions[currentQuestion];
-
-  const progress = Math.round(
-    ((currentQuestion + (selectedAnswer !== null ? 1 : 0)) /
-      questions.length) *
-      100
-  );
-
-  const chooseAnswer = (index) => {
-    if (selectedAnswer !== null) return;
-
-    setSelectedAnswer(index);
-
-    if (index === question.answer) {
-      setScore((previousScore) => previousScore + 1);
+  // Save results after quiz finishes and stats loaded
+  useEffect(() => {
+    if (quizFinished && resultsLoaded) {
+      saveQuizResults();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quizFinished, resultsLoaded]);
+
+  async function saveQuizResults() {
+    setIsSaving(true);
+    setSaveError(false);
+    setSaveErrorMessage('');
+    try {
+      let resp;
+      if (window.electronAPI?.saveQuizResults) {
+        resp = await window.electronAPI.saveQuizResults(
+          score,
+          questions.length,
+          attemptIdRef.current
+        );
+      } else {
+        const previous = loadBrowserResults() || initialSavedResults;
+        const isSameAttempt = previous.lastAttemptId === attemptIdRef.current;
+        const results = isSameAttempt
+          ? previous
+          : {
+              attempts: (Number.isInteger(previous.attempts) ? previous.attempts : 0) + 1,
+              previousScore: Number.isInteger(previous.latestScore)
+                ? previous.latestScore
+                : null,
+              latestScore: score,
+              bestScore: Math.max(previous.bestScore || 0, score),
+              lastAttemptId: attemptIdRef.current,
+            };
+        window.localStorage.setItem(quizResultsStorageKey, JSON.stringify(results));
+        resp = { success: true, results };
+      }
+      if (resp && resp.success && resp.results) {
+        setSavedResults(normaliseResults(resp.results));
+        setSaveError(false);
+        setSaveErrorMessage('');
+      } else {
+        setSaveError(true);
+        setSaveErrorMessage(resp?.error || 'Unknown error saving quiz results.');
+      }
+    } catch (err) {
+      setSaveError(true);
+      setSaveErrorMessage(String(err?.message || err));
+    }
+    setIsSaving(false);
+  }
+
+  const handleAnswer = (idx) => {
+    setAnswers((previousAnswers) => {
+      const nextAnswers = [...previousAnswers];
+      nextAnswers[currentQuestion] = idx;
+      return nextAnswers;
+    });
   };
 
-  const nextQuestion = () => {
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion((previousQuestion) => previousQuestion + 1);
-      setSelectedAnswer(null);
+  const handleNext = () => {
+    if (currentQuestion + 1 < questions.length) {
+      setCurrentQuestion((q) => q + 1);
     } else {
+      const finalScore = answers.reduce(
+        (total, answer, index) => total + (answer === questions[index].answer ? 1 : 0),
+        0
+      );
+      attemptIdRef.current = createAttemptId();
+      setScore(finalScore);
       setQuizFinished(true);
     }
   };
 
-  // Save results once when the quiz finishes.
-  useEffect(() => {
-    if (!quizFinished || !resultsLoaded) return;
-
-    let isCancelled = false;
-
-    async function saveResults() {
-      try {
-        if (!window.electronAPI) return;
-
-        const result = await window.electronAPI.saveQuizResults(
-          score,
-          questions.length
-        );
-
-        if (isCancelled) return;
-
-        if (result?.results) {
-          setSavedResults({
-            attempts: result.results.attempts,
-            latestScore: result.results.latestScore,
-            bestScore: result.results.bestScore,
-          });
-        }
-
-        setSaveError(false);
-      } catch (error) {
-        console.error('Could not save quiz results:', error);
-
-        if (!isCancelled) {
-          setSaveError(true);
-        }
-      }
-    }
-
-    saveResults();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [quizFinished, resultsLoaded, score]);
-
-  const restartQuiz = () => {
+  const handleTryAgain = () => {
     setCurrentQuestion(0);
-    setSelectedAnswer(null);
+    setAnswers([]);
     setScore(0);
     setQuizFinished(false);
+    attemptIdRef.current = null;
     setSaveError(false);
+    setSaveErrorMessage('');
   };
 
-  if (quizFinished) {
-    const percentage = Math.round((score / questions.length) * 100);
+  const handleRetrySave = () => {
+    saveQuizResults();
+  };
 
-    let message =
-      'Good effort! Review the guides and try again to improve your score.';
+  // Styles
+  const containerStyle = {
+    maxWidth: 480,
+    margin: '32px auto',
+    padding: '24px',
+    background: '#f9f9fa',
+    borderRadius: 12,
+    boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
+    fontFamily: 'system-ui, sans-serif',
+    minHeight: 400,
+  };
+  const questionStyle = {
+    fontSize: 20,
+    fontWeight: 600,
+    marginBottom: 18,
+  };
+  const optionStyle = (idx, selected) => ({
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '12px 16px',
+    margin: '8px 0',
+    borderRadius: 8,
+    border: selected === idx ? '2px solid #1976d2' : '1px solid #ccc',
+    background: selected === idx ? '#e3f2fd' : '#fff',
+    cursor: 'pointer',
+    color: '#222',
+    fontWeight: selected === idx ? 600 : 400,
+    transition: 'background 0.15s, border 0.15s, color 0.15s',
+  });
+  const buttonStyle = {
+    marginTop: 24,
+    padding: '10px 28px',
+    fontSize: 16,
+    borderRadius: 8,
+    border: 'none',
+    background: '#1976d2',
+    color: '#fff',
+    cursor: 'pointer',
+    fontWeight: 600,
+    boxShadow: '0 2px 6px rgba(25,118,210,0.07)',
+  };
+  const disabledButtonStyle = {
+    ...buttonStyle,
+    background: '#b0b9c8',
+    cursor: 'not-allowed',
+  };
+  const statStyle = {
+    margin: '10px 0 0 0',
+    color: '#666',
+    fontSize: 15,
+  };
+  const errorStyle = {
+    margin: '12px 0',
+    color: '#d32f2f',
+    background: '#ffebee',
+    padding: '8px 14px',
+    borderRadius: 8,
+    fontSize: 14,
+    wordBreak: 'break-word',
+  };
+  const selectedAnswer = answers[currentQuestion] ?? null;
 
-    if (percentage >= 80) {
-      message =
-        'Excellent work! You have a strong understanding of disaster safety.';
-    } else if (percentage >= 50) {
-      message =
-        'Nice work! Review a few safety topics and you will be even better prepared.';
-    }
-
-    return (
-      <div>
-        <p>QUIZ COMPLETE</p>
-        <h1>Your Results 🏆</h1>
-
-        <div
-          style={{
-            maxWidth: '520px',
-            padding: '28px',
-            marginTop: '24px',
-            background: 'white',
-            border: '1px solid #d8e1d8',
-            borderRadius: '16px',
-            textAlign: 'center',
-          }}
-        >
-          <h2>{percentage}%</h2>
-
-          <p>
-            You answered {score} out of {questions.length} questions correctly.
-          </p>
-
-          <p>{message}</p>
-
-          <hr style={{ border: 'none', borderTop: '1px solid #d8e1d8' }} />
-
-          <h3>Your Quiz Statistics</h3>
-
-          <p>
-            <strong>Latest score:</strong> {savedResults.latestScore}/
-            {questions.length}
-          </p>
-
-          <p>
-            <strong>Best score:</strong> {savedResults.bestScore}/
-            {questions.length}
-          </p>
-
-          <p>
-            <strong>Completed attempts:</strong> {savedResults.attempts}
-          </p>
-
-          {saveError && (
-            <p style={{ color: '#b42318' }}>
-              Your result could not be saved. Please try again later.
-            </p>
-          )}
-
+  // Main render
+  return (
+    <div style={containerStyle}>
+      {!quizFinished ? (
+        <>
+          <div style={{marginBottom:12, color:'#888', fontSize:15}}>
+            Question {currentQuestion + 1} of {questions.length}
+          </div>
+          <div style={questionStyle}>{questions[currentQuestion].question}</div>
+          <div>
+            {questions[currentQuestion].options.map((opt, idx) => (
+              <button
+                key={idx}
+                style={optionStyle(
+                  idx,
+                  selectedAnswer
+                )}
+                onClick={() => handleAnswer(idx)}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
           <button
-            onClick={restartQuiz}
-            style={{
-              padding: '12px 20px',
-              border: 'none',
-              borderRadius: '8px',
-              background: '#17352b',
-              color: 'white',
-              cursor: 'pointer',
-            }}
+            style={
+              selectedAnswer !== null ? buttonStyle : disabledButtonStyle
+            }
+            onClick={handleNext}
+            disabled={selectedAnswer === null}
+          >
+            {currentQuestion + 1 === questions.length ? 'Submit Quiz' : 'Next'}
+          </button>
+        </>
+      ) : (
+        <>
+          <div style={{fontSize:22, fontWeight:700, marginBottom:12}}>
+            Quiz Results
+          </div>
+          <div style={{fontSize:18, marginBottom:10}}>
+            You answered <strong>{score}</strong> out of <strong>{questions.length}</strong> questions correctly
+          </div>
+          <div style={statStyle}>
+            <div>
+              <span style={{fontWeight:600}}>Attempts:</span> {savedResults.attempts}
+            </div>
+            <div>
+              <span style={{fontWeight:600}}>Best Score:</span> {savedResults.bestScore} / {questions.length}
+            </div>
+            <div>
+              <span style={{fontWeight:600}}>Latest Score:</span> {savedResults.latestScore} / {questions.length}
+            </div>
+            <div>
+              <span style={{fontWeight:600}}>Previous Score:</span>{' '}
+              {savedResults.previousScore === null
+                ? '—'
+                : `${savedResults.previousScore} / ${questions.length}`}
+            </div>
+          </div>
+          {saveError && (
+            <div style={errorStyle}>
+              <div>
+                <strong>Save Error:</strong>
+              </div>
+              <div>{saveErrorMessage}</div>
+              <button
+                style={{...buttonStyle, background:'#d32f2f', marginTop:10}}
+                onClick={handleRetrySave}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Retrying...' : 'Retry Save'}
+              </button>
+            </div>
+          )}
+          <button
+            style={{...buttonStyle, marginTop:18, background:'#1976d2'}}
+            onClick={handleTryAgain}
+            disabled={isSaving}
           >
             Try Again
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ maxWidth: '760px' }}>
-      <p>TEST YOUR KNOWLEDGE</p>
-      <h1>Disaster Safety Quiz 🧠</h1>
-
-      <p>
-        Answer each question to check how prepared you are for an emergency.
-      </p>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginTop: '28px',
-        }}
-      >
-        <span>
-          Question {currentQuestion + 1} of {questions.length}
-        </span>
-
-        <strong>{progress}%</strong>
-      </div>
-
-      <div
-        style={{
-          height: '8px',
-          background: '#e5ebe5',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          margin: '12px 0 24px',
-        }}
-      >
-        <div
-          style={{
-            height: '100%',
-            width: `${progress}%`,
-            background: '#3c8b65',
-            transition: 'width 0.2s ease',
-          }}
-        />
-      </div>
-
-      <div
-        style={{
-          padding: '28px',
-          background: 'white',
-          border: '1px solid #d8e1d8',
-          borderRadius: '16px',
-        }}
-      >
-        <h2>{question.question}</h2>
-
-        <div style={{ display: 'grid', gap: '12px', marginTop: '24px' }}>
-          {question.options.map((option, index) => {
-            const isSelected = selectedAnswer === index;
-            const isCorrect = question.answer === index;
-
-            let background = 'white';
-            let border = '1px solid #d8e1d8';
-
-            if (selectedAnswer !== null && isCorrect) {
-              background = '#e8f4ec';
-              border = '1px solid #3c8b65';
-            } else if (isSelected && !isCorrect) {
-              background = '#fdebea';
-              border = '1px solid #d9534f';
-            }
-
-            return (
-              <button
-                key={option}
-                onClick={() => chooseAnswer(index)}
-                disabled={selectedAnswer !== null}
-                style={{
-                  padding: '16px',
-                  textAlign: 'left',
-                  border,
-                  borderRadius: '10px',
-                  background,
-                  cursor: selectedAnswer !== null ? 'default' : 'pointer',
-                  color: '#17352b',
-                  fontSize: '15px',
-                }}
-              >
-                {String.fromCharCode(65 + index)}. {option}
-              </button>
-            );
-          })}
-        </div>
-
-        {selectedAnswer !== null && (
-          <div
-            style={{
-              marginTop: '24px',
-              padding: '16px',
-              background: '#f5f7f2',
-              borderRadius: '10px',
-            }}
-          >
-            <strong>
-              {selectedAnswer === question.answer
-                ? 'Correct answer! 🎉'
-                : 'Not quite! Keep learning. 💡'}
-            </strong>
-
-            <p>{question.explanation}</p>
-
-            <button
-              onClick={nextQuestion}
-              style={{
-                padding: '12px 20px',
-                border: 'none',
-                borderRadius: '8px',
-                background: '#17352b',
-                color: 'white',
-                cursor: 'pointer',
-              }}
-            >
-              {currentQuestion === questions.length - 1
-                ? 'See Results'
-                : 'Next Question →'}
-            </button>
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
-}
+};
 
 export default Quiz;
