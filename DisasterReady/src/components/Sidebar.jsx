@@ -40,6 +40,8 @@ function Sidebar({ activePage, onNavigate }) {
         <div>
           <strong>Ready to learn</strong>
           <span>Safety through knowledge</span>
+          <span>Created by : Asmit Kumar (with a lil help form ai 😅)</span>
+          <span>Version: 1.0.0</span>
         </div>
       </div>
     </aside>
