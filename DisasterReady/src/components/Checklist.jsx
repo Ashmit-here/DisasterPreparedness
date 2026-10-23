@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 
+// The kit is organised into simple categories for easier reading.
 const checklistItems = [
   {
     category: 'Essential Supplies',
@@ -30,6 +31,7 @@ const checklistItems = [
 ];
 
 function Checklist() {
+  // checkedItems stores only the id numbers of completed supplies.
   const [checkedItems, setCheckedItems] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -76,6 +78,7 @@ function Checklist() {
     });
   }, [checkedItems, isLoaded]);
 
+  // Calculate the progress numbers shown at the top of the page.
   const totalItems = checklistItems.reduce(
     (total, category) => total + category.items.length,
     0
@@ -84,6 +87,7 @@ function Checklist() {
   const completedCount = checkedItems.length;
   const progress = Math.round((completedCount / totalItems) * 100);
 
+  // Add or remove one item when its checkbox is clicked.
   const toggleItem = (id) => {
     setCheckedItems((previousItems) =>
       previousItems.includes(id)
@@ -96,6 +100,7 @@ function Checklist() {
     setCheckedItems([]);
   };
 
+  // The page contains a progress card followed by the category checklists.
   return (
     <section className="content-page checklist-page">
       <span className="eyebrow">BE READY BEFORE AN EMERGENCY</span>

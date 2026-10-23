@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+// Questions are kept in one list. Each answer is the index of the correct option.
 const questions = [
   {
     question: 'What should you do first when an earthquake starts?',
@@ -99,6 +100,7 @@ const questions = [
   },
 ];
 
+// Default values used before any quiz has been completed.
 const initialSavedResults = {
   attempts: 0,
   previousScore: null,
@@ -106,8 +108,10 @@ const initialSavedResults = {
   bestScore: 0,
 };
 
+// Browser storage is used when the app is opened without Electron.
 const quizResultsStorageKey = 'disasterready.quiz-results';
 
+// Protect the interface from missing or invalid saved values.
 const normaliseResults = (results) => ({
   attempts: Number.isInteger(results?.attempts) ? results.attempts : 0,
   previousScore: Number.isInteger(results?.previousScore)
@@ -117,6 +121,7 @@ const normaliseResults = (results) => ({
   bestScore: Number.isInteger(results?.bestScore) ? results.bestScore : 0,
 });
 
+// Read the browser fallback without crashing on invalid saved data.
 const loadBrowserResults = () => {
   try {
     return JSON.parse(window.localStorage.getItem(quizResultsStorageKey) || 'null');
@@ -130,6 +135,7 @@ const createAttemptId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const Quiz = () => {
+  // Quiz state: current question, selected answers, score, and save status.
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [score, setScore] = useState(0);
@@ -141,7 +147,7 @@ const Quiz = () => {
   const [isSaving, setIsSaving] = useState(false);
   const attemptIdRef = useRef(null);
 
-  // Load results on mount
+  // Load results when the quiz page opens.
   useEffect(() => {
     let mounted = true;
     async function loadResults() {
@@ -173,7 +179,7 @@ const Quiz = () => {
     return () => { mounted = false; };
   }, []);
 
-  // Save results after quiz finishes and stats loaded
+  // Save only after the final score and previous results are ready.
   useEffect(() => {
     if (quizFinished && resultsLoaded) {
       saveQuizResults();
@@ -182,6 +188,7 @@ const Quiz = () => {
   }, [quizFinished, resultsLoaded]);
 
   async function saveQuizResults() {
+    // Electron saves to a file; the browser version uses localStorage.
     setIsSaving(true);
     setSaveError(false);
     setSaveErrorMessage('');
@@ -225,6 +232,7 @@ const Quiz = () => {
     setIsSaving(false);
   }
 
+  // Store one answer. Learners can change it before moving on.
   const handleAnswer = (idx) => {
     setAnswers((previousAnswers) => {
       const nextAnswers = [...previousAnswers];
@@ -233,6 +241,7 @@ const Quiz = () => {
     });
   };
 
+  // Move forward, or calculate the final marks on the last question.
   const handleNext = () => {
     if (currentQuestion + 1 < questions.length) {
       setCurrentQuestion((q) => q + 1);
@@ -247,6 +256,7 @@ const Quiz = () => {
     }
   };
 
+  // Reset only the current attempt; saved marks remain available.
   const handleTryAgain = () => {
     setCurrentQuestion(0);
     setAnswers([]);
@@ -261,7 +271,7 @@ const Quiz = () => {
     saveQuizResults();
   };
 
-  // Styles
+  // Small inline style helpers used only by this component.
   const containerStyle = {
     maxWidth: 480,
     margin: '32px auto',
@@ -324,7 +334,7 @@ const Quiz = () => {
   };
   const selectedAnswer = answers[currentQuestion] ?? null;
 
-  // Main render
+  // Show questions until submission, then show marks and saved statistics.
   return (
     <div style={containerStyle}>
       {!quizFinished ? (

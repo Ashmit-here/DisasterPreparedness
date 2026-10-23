@@ -1,3 +1,4 @@
+// Expose only these safe functions to the React page (not all of Electron).
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {

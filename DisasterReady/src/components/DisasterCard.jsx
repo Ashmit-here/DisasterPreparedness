@@ -1,5 +1,6 @@
 function DisasterCard({ disaster, onSelect }) {
   return (
+    // Each card sends the selected disaster back to the parent page.
     <button
       className="disaster-card"
       onClick={() => onSelect(disaster)}

@@ -1,3 +1,4 @@
+// Electron's main process creates the desktop window and saves local data.
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -8,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const isDev = !app.isPackaged;
 
+// Keep user data in Electron's safe app-data folder.
 const checklistFilePath = () =>
   path.join(app.getPath('userData'), 'checklist.json');
 
@@ -22,6 +24,7 @@ const emptyQuizResults = () => ({
   lastAttemptId: null,
 });
 
+// Return safe quiz values even if an old save file is incomplete.
 function normaliseQuizResults(data, totalQuestions) {
   const isScore = (value) =>
     Number.isInteger(value) && value >= 0 && value <= totalQuestions;
@@ -39,6 +42,7 @@ function normaliseQuizResults(data, totalQuestions) {
   };
 }
 
+// Create the main desktop window and load Vite in development.
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -60,11 +64,13 @@ function createWindow() {
   }
 }
 
+// IPC handlers let the React page ask Electron for app data safely.
 ipcMain.handle('app:get-info', () => ({
   name: 'DisasterReady',
   version: app.getVersion(),
 }));
 
+// Read and validate the saved emergency-kit checklist.
 ipcMain.handle('checklist:load', async () => {
   try {
     const filePath = checklistFilePath();
@@ -88,6 +94,7 @@ ipcMain.handle('checklist:load', async () => {
   }
 });
 
+// Save a validated checklist to JSON.
 ipcMain.handle('checklist:save', async (_event, checkedItems) => {
   if (
     !Array.isArray(checkedItems) ||
@@ -111,6 +118,7 @@ ipcMain.handle('checklist:save', async (_event, checkedItems) => {
   return { success: true };
 });
 
+// Start Electron after it has finished initial setup.
 app.whenReady().then(() => {
   createWindow();
 
@@ -128,6 +136,7 @@ app.on('window-all-closed', () => {
 }
 );
 
+// Read saved quiz statistics.
 ipcMain.handle('quiz:load-results', async () => {
   try {
     const fileContents = await fs.readFile(quizResultsFilePath(), 'utf8');
@@ -152,6 +161,7 @@ ipcMain.handle('quiz:load-results', async () => {
   }
 });
 
+// Save one quiz attempt. The attempt id prevents retrying from adding duplicates.
 ipcMain.handle('quiz:save-results', async (_event, score, totalQuestions, attemptId) => {
   if (
     !Number.isInteger(score) ||

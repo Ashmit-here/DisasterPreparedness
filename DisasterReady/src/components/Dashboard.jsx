@@ -3,12 +3,14 @@ import DisasterCard from './DisasterCard';
 function Dashboard({ disasters, onSelectDisaster, onNavigate }) {
   return (
     <main className="dashboard">
+      {/* Small status label above the main introduction. */}
       <header className="topbar">
         <div className="topbar-badge">
           <span>●</span> Learning mode
         </div>
       </header>
 
+      {/* The main call to action. */}
       <section className="hero">
         <div className="hero-content">
           <span className="hero-label">BE INFORMED. BE PREPARED.</span>
@@ -37,6 +39,7 @@ function Dashboard({ disasters, onSelectDisaster, onNavigate }) {
         </div>
       </section>
 
+      {/* One card for each available disaster guide. */}
       <section className="disaster-section">
         <div className="section-heading">
           <div>
@@ -57,6 +60,7 @@ function Dashboard({ disasters, onSelectDisaster, onNavigate }) {
         </div>
       </section>
 
+      {/* Quick links to the two interactive tools. */}
       <section className="bottom-grid">
         <article className="info-panel">
           <div className="panel-icon">✓</div>
