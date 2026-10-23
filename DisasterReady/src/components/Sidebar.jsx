@@ -9,8 +9,10 @@ const navigationItems = [
 function Sidebar({ activePage, onNavigate }) {
 return (
 <aside className="sidebar">
-DisasterReady
-Preparedness starts here
+  <div className="brand">
+    <span className="brand-mark">✚</span>
+    <div><strong>DisasterReady</strong><span>Preparedness starts here</span></div>
+  </div>
   <p className="nav-heading">WORKSPACE</p>
   <nav className="navigation">
     {navigationItems.map((item) => (

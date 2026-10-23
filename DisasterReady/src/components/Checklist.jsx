@@ -97,8 +97,8 @@ function Checklist() {
   };
 
   return (
-    <div>
-      <p>BE READY BEFORE AN EMERGENCY</p>
+    <section className="content-page checklist-page">
+      <span className="eyebrow">BE READY BEFORE AN EMERGENCY</span>
 
       <h1>Emergency Kit Checklist</h1>
 
@@ -222,7 +222,7 @@ function Checklist() {
           review its contents regularly.
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
